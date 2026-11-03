@@ -29,9 +29,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 OUTPUT = ROOT / "outputs"
 FIGURES = OUTPUT / "figures"
+TABLES = OUTPUT / "tables"
 
-OUTPUT.mkdir(exist_ok=True)
+OUTPUT.mkdir(parents=True, exist_ok=True)
 FIGURES.mkdir(parents=True, exist_ok=True)
+TABLES.mkdir(parents=True, exist_ok=True)
 
 
 # ----------------------------------------------------------
@@ -40,15 +42,32 @@ FIGURES.mkdir(parents=True, exist_ok=True)
 
 def load_data():
 
-    file = OUTPUT / "state_year_death_rates_2001_2014.csv"
+    file = TABLES / "state_year_death_rates_2001_2014.csv"
 
     if not file.exists():
         raise FileNotFoundError(
-            "Death-rate dataset not found. "
-            "Run data preprocessing first."
+            f"Death-rate dataset not found: {file}\n"
+            "Run 01_data_preprocessing.py first."
         )
 
     df = pd.read_csv(file)
+
+    required_columns = [
+        "state",
+        "lightning_rate_per_lakh",
+        "heat_stroke_rate_per_lakh",
+        "flood_rate_per_lakh"
+    ]
+
+    missing = [
+        col for col in required_columns
+        if col not in df.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            f"Missing required columns in dataset: {missing}"
+        )
 
     print("\nDataset loaded successfully!")
     print("Rows:", len(df))
@@ -69,16 +88,6 @@ def prepare_features(df):
         "flood_rate_per_lakh"
     ]
 
-    missing = [
-        col for col in features
-        if col not in df.columns
-    ]
-
-    if missing:
-        raise ValueError(
-            f"Missing columns: {missing}"
-        )
-
     # Average rates over 2001-2014 for each State.
     state_data = (
         df.groupby("state")[features]
@@ -88,18 +97,25 @@ def prepare_features(df):
 
     state_data = state_data.replace(
         [np.inf, -np.inf], np.nan
-    ).dropna(subset=features)
+    )
+
+    state_data = state_data.dropna(
+        subset=features
+    )
 
     if len(state_data) < 3:
         raise ValueError(
             "At least three valid States are required "
-            "for this clustering analysis."
+            "for clustering analysis."
         )
 
     print("\nState-wise average mortality profiles:")
     print(state_data.to_string(index=False))
 
-    print("\nNumber of States/UTs included:", len(state_data))
+    print(
+        "\nNumber of States/UTs included:",
+        len(state_data)
+    )
 
     X = state_data[features]
 
@@ -120,12 +136,10 @@ def create_state_rate_heatmap(state_data):
         "flood_rate_per_lakh"
     ]
 
-    # Select the average mortality rates
     heatmap_data = state_data[
         ["state"] + features
     ].copy()
 
-    # Rename columns for presentation
     heatmap_data = heatmap_data.rename(
         columns={
             "lightning_rate_per_lakh": "Lightning",
@@ -134,13 +148,9 @@ def create_state_rate_heatmap(state_data):
         }
     )
 
-    # Set State names as index
     heatmap_data = heatmap_data.set_index("state")
-
-    # Sort alphabetically
     heatmap_data = heatmap_data.sort_index()
 
-    # Figure size adjusts to the number of States
     fig_height = max(
         8,
         len(heatmap_data) * 0.38
@@ -150,7 +160,6 @@ def create_state_rate_heatmap(state_data):
         figsize=(10, fig_height)
     )
 
-    # Draw heatmap
     sns.heatmap(
         heatmap_data,
         annot=True,
@@ -243,7 +252,7 @@ def evaluate_clusters(X_scaled):
     metrics = pd.DataFrame(results)
 
     metrics.to_csv(
-        OUTPUT / "clustering_metrics.csv",
+        TABLES / "clustering_metrics.csv",
         index=False
     )
 
@@ -354,6 +363,11 @@ def perform_pca(state_data, X_scaled):
     print(
         "\nExplained variance:",
         pca.explained_variance_ratio_
+    )
+
+    print(
+        "Total variance explained:",
+        pca.explained_variance_ratio_.sum()
     )
 
     plt.figure(figsize=(11, 7))
@@ -502,7 +516,7 @@ def detect_outliers(state_data, X_scaled):
 
 def save_results(state_data):
 
-    file = OUTPUT / "final_clustering_results.csv"
+    file = TABLES / "final_clustering_results.csv"
 
     state_data.to_csv(
         file,
@@ -569,6 +583,8 @@ def main():
     print("\n" + "=" * 60)
     print("CLUSTERING ANALYSIS COMPLETED!")
     print("All six graphs have been generated.")
+    print("CSV files saved inside outputs/tables/")
+    print("Graphs saved inside outputs/figures/")
     print("=" * 60)
 
 

@@ -5,6 +5,8 @@
 #   1. Read and standardise NCRB/ADSI death CSV files
 #   2. Read State/UT population from Census 2011 Excel workbook
 #   3. Calculate hazard-specific death rates per lakh population
+#   4. Save all CSV files inside outputs/tables/
+# ============================================================
 
 from pathlib import Path
 import re
@@ -17,10 +19,15 @@ import numpy as np
 # ------------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parents[1]
+
 RAW = ROOT / "data" / "raw"
 OUTPUT = ROOT / "outputs"
+FIGURES = OUTPUT / "figures"
+TABLES = OUTPUT / "tables"
 
 OUTPUT.mkdir(parents=True, exist_ok=True)
+FIGURES.mkdir(parents=True, exist_ok=True)
+TABLES.mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
@@ -40,14 +47,13 @@ def standardise_state(value):
         "DELHI (UT)": "DELHI",
         "DELHI UT": "DELHI",
         "A AND N ISLANDS": "ANDAMAN AND NICOBAR ISLANDS",
-        "ANDAMAN & NICOBAR ISLANDS": "ANDAMAN AND NICOBAR ISLANDS",
+        "ANDAMAN AND NICOBAR ISLANDS": "ANDAMAN AND NICOBAR ISLANDS",
         "D AND N HAVELI": "DADRA AND NAGAR HAVELI",
     }
 
-    # Deliberately do NOT merge Telangana into Andhra Pradesh here.
-    # For 2014, the undivided 2011 Andhra Pradesh population cannot
-    # be used as Telangana's denominator. Those rows must be reviewed
-    # or supplied with a separately derived Telangana 2011 population.
+    # Telangana is not merged into Andhra Pradesh.
+    # The 2011 Census population for undivided Andhra Pradesh
+    # cannot be used as Telangana's separate denominator.
 
     return aliases.get(name, name)
 
@@ -73,8 +79,6 @@ def standardise_cause(value):
     if "other natural" in cause:
         return "other_natural"
 
-    # The project focuses on lightning, heat stroke and floods.
-    # Other causes are not silently reclassified.
     return None
 
 
@@ -118,6 +122,7 @@ def identify_death_csvs():
             "state/ut" in columns
             or "states/uts" in columns
         )
+
         has_year = "year" in columns
         has_total = "grand total" in columns
         has_cause = "cause" in columns or "crimehead" in columns
@@ -143,9 +148,9 @@ def identify_death_csvs():
 # ------------------------------------------------------------
 
 def clean_death_file(path):
+
     df = read_csv_with_fallback(path)
 
-    # Support both column layouts found in the uploaded datasets.
     lower_to_original = {
         str(col).strip().lower(): col for col in df.columns
     }
@@ -167,18 +172,29 @@ def clean_death_file(path):
     year_col = lower_to_original["year"]
     deaths_col = lower_to_original["grand total"]
 
-    cleaned = df[[state_col, year_col, cause_col, deaths_col]].copy()
-    cleaned.columns = ["state_original", "year", "cause_original", "deaths"]
+    cleaned = df[
+        [state_col, year_col, cause_col, deaths_col]
+    ].copy()
+
+    cleaned.columns = [
+        "state_original",
+        "year",
+        "cause_original",
+        "deaths"
+    ]
 
     cleaned["state"] = cleaned["state_original"].map(standardise_state)
     cleaned["cause"] = cleaned["cause_original"].map(standardise_cause)
-    cleaned["year"] = pd.to_numeric(cleaned["year"], errors="coerce")
+
+    cleaned["year"] = pd.to_numeric(
+        cleaned["year"], errors="coerce"
+    )
+
     cleaned["deaths"] = pd.to_numeric(
         cleaned["deaths"].astype(str).str.replace(",", "", regex=False),
         errors="coerce"
     )
 
-    # Remove national totals and non-data rows.
     aggregate_names = {
         "INDIA",
         "TOTAL",
@@ -221,20 +237,20 @@ def clean_death_file(path):
 # ------------------------------------------------------------
 
 def combine_death_files():
-    files = identify_death_csvs()
 
+    files = identify_death_csvs()
     frames = []
 
     for path in files:
         print(f"\nCleaning {path.name} ...")
+
         frame = clean_death_file(path)
+
         print("Rows retained:", len(frame))
         frames.append(frame)
 
     combined = pd.concat(frames, ignore_index=True)
 
-    # Aggregate duplicate State-Year-Cause rows if a cause is split
-    # across multiple source rows.
     combined = (
         combined.groupby(
             ["state", "year", "cause"],
@@ -247,7 +263,8 @@ def combine_death_files():
         ["state", "year", "cause"]
     )
 
-    output_file = OUTPUT / "adsi_cleaned.csv"
+    # Save CSV inside outputs/tables/
+    output_file = TABLES / "adsi_cleaned.csv"
     combined.to_csv(output_file, index=False)
 
     print("\nCleaned ADSI data saved:", output_file)
@@ -262,6 +279,7 @@ def combine_death_files():
 # ------------------------------------------------------------
 
 def identify_census_workbook():
+
     files = list(RAW.glob("*.xlsx")) + list(RAW.glob("*.xls"))
 
     if len(files) == 0:
@@ -270,13 +288,13 @@ def identify_census_workbook():
         )
 
     if len(files) > 1:
-        # Select a workbook whose name suggests Census; otherwise ask
-        # the user to keep only the intended Census workbook in raw.
+
         census_named = [
             f for f in files
             if "census" in f.name.lower()
             or "population" in f.name.lower()
         ]
+
         if len(census_named) == 1:
             return census_named[0]
 
@@ -289,17 +307,21 @@ def identify_census_workbook():
 
 
 def load_census_population():
+
     workbook = identify_census_workbook()
 
     print("\nReading Census workbook:", workbook.name)
 
-    # The uploaded workbook has a sheet named Data.
     excel = pd.ExcelFile(workbook)
-    sheet = "Data" if "Data" in excel.sheet_names else excel.sheet_names[0]
+
+    sheet = (
+        "Data"
+        if "Data" in excel.sheet_names
+        else excel.sheet_names[0]
+    )
+
     census = pd.read_excel(workbook, sheet_name=sheet)
 
-    # Expected uploaded Census columns:
-    # Level, Name, TRU, TOT_P
     required = {"Level", "Name", "TRU", "TOT_P"}
 
     if not required.issubset(census.columns):
@@ -314,6 +336,7 @@ def load_census_population():
     ].copy()
 
     population["state"] = population["Name"].map(standardise_state)
+
     population["population_2011"] = pd.to_numeric(
         population["TOT_P"], errors="coerce"
     )
@@ -331,7 +354,8 @@ def load_census_population():
         keep="first"
     )
 
-    output_file = OUTPUT / "state_population_2011.csv"
+    # Save CSV inside outputs/tables/
+    output_file = TABLES / "state_population_2011.csv"
     population.to_csv(output_file, index=False)
 
     print("Census population saved:", output_file)
@@ -381,8 +405,6 @@ def calculate_death_rates(deaths, population):
         validate="many_to_one"
     )
 
-    # Report unmatched State names rather than silently assigning
-    # an incorrect population denominator.
     unmatched = sorted(
         wide.loc[
             wide["population_2011"].isna(), "state"
@@ -391,8 +413,10 @@ def calculate_death_rates(deaths, population):
 
     if unmatched:
         print("\nWARNING: No matching 2011 Census population for:")
+
         for state in unmatched:
             print(" -", state)
+
         print(
             "These State-year rows will have missing rates until "
             "their population denominators are resolved."
@@ -400,17 +424,20 @@ def calculate_death_rates(deaths, population):
 
     for cause in hazard_columns:
         rate_column = cause + "_rate_per_lakh"
+
         wide[rate_column] = (
             wide[cause] / wide["population_2011"] * 100000
         )
 
     wide["population_year_used"] = 2011
+
     wide["population_method"] = (
         "Fixed 2011 Census population used for all years; "
         "preliminary approximation, not annual population estimates."
     )
 
-    output_file = OUTPUT / "state_year_death_rates_2001_2014.csv"
+    # Save CSV inside outputs/tables/
+    output_file = TABLES / "state_year_death_rates_2001_2014.csv"
     wide.to_csv(output_file, index=False)
 
     print("\nDeath-rate dataset saved:", output_file)
@@ -424,12 +451,12 @@ def calculate_death_rates(deaths, population):
 # ------------------------------------------------------------
 
 def main():
+
     print("=" * 60)
     print("DISASTER MORTALITY DATA PREPROCESSING")
     print("=" * 60)
 
     deaths = combine_death_files()
-
     population = load_census_population()
 
     rates = calculate_death_rates(
@@ -438,7 +465,8 @@ def main():
     )
 
     print("\nPREPROCESSING COMPLETED.")
-    print("\nFiles created inside outputs/:")
+
+    print("\nFiles created inside outputs/tables/:")
     print("1. adsi_cleaned.csv")
     print("2. state_population_2011.csv")
     print("3. state_year_death_rates_2001_2014.csv")

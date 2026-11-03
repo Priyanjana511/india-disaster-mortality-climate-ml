@@ -1,17 +1,16 @@
 
-"""
-03_regression.py
-
-Project: Deaths from lightning, heat stroke and floods:
-A State typology for early-warning priorities
-
-Predictor: Summer maximum temperature
-Target: Heat-stroke deaths per lakh population
-
-Study period: 2001-2014
-Training: 2001-2011
-Testing: 2012-2014
-"""
+# ==========================================================
+# PROJECT: Deaths from lightning, heat stroke and floods
+# FILE: 03_regression.py
+# PURPOSE: Temperature and Heat-Stroke Mortality Regression
+#
+# Predictor: Summer maximum temperature
+# Target: Heat-stroke deaths per lakh population
+#
+# Study period: 2001-2014
+# Training: 2001-2011
+# Testing: 2012-2014
+# ==========================================================
 
 from pathlib import Path
 import re
@@ -25,35 +24,45 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
-    r2_score,
+    r2_score
 )
 
-# --------------------------------------------------
+
+# ----------------------------------------------------------
 # 1. PATHS AND SETTINGS
-# --------------------------------------------------
+# ----------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parents[1]
+
 OUTPUTS = ROOT / "outputs"
 FIGURES = OUTPUTS / "figures"
+TABLES = OUTPUTS / "tables"
 
-MORTALITY_FILE = OUTPUTS / "state_year_death_rates_2001_2014.csv"
-TEMPERATURE_FILE = OUTPUTS / "state_temperature_summer_2001_2025.csv"
+MORTALITY_FILE = (
+    TABLES / "state_year_death_rates_2001_2014.csv"
+)
+
+TEMPERATURE_FILE = (
+    TABLES / "state_temperature_summer_2001_2025.csv"
+)
 
 TARGET = "heat_stroke_rate_per_lakh"
 PREDICTOR = "summer_tmax_c"
 
 FIRST_YEAR = 2001
 LAST_YEAR = 2014
+
 TRAIN_LAST_YEAR = 2011
 TEST_FIRST_YEAR = 2012
 
 OUTPUTS.mkdir(parents=True, exist_ok=True)
 FIGURES.mkdir(parents=True, exist_ok=True)
+TABLES.mkdir(parents=True, exist_ok=True)
 
 
-# --------------------------------------------------
+# ----------------------------------------------------------
 # 2. STANDARDISE STATE NAMES
-# --------------------------------------------------
+# ----------------------------------------------------------
 
 def standardise_state(name):
 
@@ -67,15 +76,15 @@ def standardise_state(name):
         "DELHI UT": "DELHI",
         "PONDICHERRY": "PUDUCHERRY",
         "JAMMU & KASHMIR": "JAMMU AND KASHMIR",
-        "JAMMU-KASHMIR": "JAMMU AND KASHMIR",
+        "JAMMU-KASHMIR": "JAMMU AND KASHMIR"
     }
 
     return aliases.get(name, name)
 
 
-# --------------------------------------------------
+# ----------------------------------------------------------
 # 3. LOAD DATA
-# --------------------------------------------------
+# ----------------------------------------------------------
 
 def read_required_csv(path, required_columns, description):
 
@@ -123,18 +132,23 @@ def load_and_prepare_data():
 
     for df in [deaths, temperature]:
 
-        df["state"] = df["state"].apply(standardise_state)
+        df["state"] = df["state"].apply(
+            standardise_state
+        )
 
         df["year"] = pd.to_numeric(
-            df["year"], errors="coerce"
+            df["year"],
+            errors="coerce"
         )
 
     deaths[TARGET] = pd.to_numeric(
-        deaths[TARGET], errors="coerce"
+        deaths[TARGET],
+        errors="coerce"
     )
 
     temperature[PREDICTOR] = pd.to_numeric(
-        temperature[PREDICTOR], errors="coerce"
+        temperature[PREDICTOR],
+        errors="coerce"
     )
 
     deaths = deaths.dropna(
@@ -155,13 +169,15 @@ def load_and_prepare_data():
     ]:
 
         duplicates = df.duplicated(
-            ["state", "year"], keep=False
+            ["state", "year"],
+            keep=False
         )
 
         if duplicates.any():
 
             examples = df.loc[
-                duplicates, ["state", "year"]
+                duplicates,
+                ["state", "year"]
             ].head(10)
 
             raise ValueError(
@@ -171,11 +187,17 @@ def load_and_prepare_data():
 
     # Keep overlapping years only
     deaths = deaths[
-        deaths["year"].between(FIRST_YEAR, LAST_YEAR)
+        deaths["year"].between(
+            FIRST_YEAR,
+            LAST_YEAR
+        )
     ]
 
     temperature = temperature[
-        temperature["year"].between(FIRST_YEAR, LAST_YEAR)
+        temperature["year"].between(
+            FIRST_YEAR,
+            LAST_YEAR
+        )
     ]
 
     # Merge both datasets
@@ -188,7 +210,8 @@ def load_and_prepare_data():
     )
 
     data = data.replace(
-        [np.inf, -np.inf], np.nan
+        [np.inf, -np.inf],
+        np.nan
     )
 
     data = data.dropna(
@@ -210,13 +233,15 @@ def load_and_prepare_data():
         ["year", "state"]
     ).reset_index(drop=True)
 
+    # Save merged regression dataset
     data.to_csv(
-        OUTPUTS / "regression_dataset_2001_2014.csv",
+        TABLES / "regression_dataset_2001_2014.csv",
         index=False
     )
 
-    print("Matched observations:", len(data))
+    print("\nMatched observations:", len(data))
     print("Number of States/UTs:", data["state"].nunique())
+
     print(
         "Years:",
         data["year"].min(),
@@ -224,12 +249,15 @@ def load_and_prepare_data():
         data["year"].max()
     )
 
+    print("\nMerged dataset preview:")
+    print(data.head())
+
     return data
 
 
-# --------------------------------------------------
+# ----------------------------------------------------------
 # 4. TRAIN AND TEST LINEAR REGRESSION
-# --------------------------------------------------
+# ----------------------------------------------------------
 
 def train_and_evaluate(data):
 
@@ -262,7 +290,10 @@ def train_and_evaluate(data):
 
     model = LinearRegression()
 
-    model.fit(X_train, y_train)
+    model.fit(
+        X_train,
+        y_train
+    )
 
     predicted = model.predict(X_test)
 
@@ -276,12 +307,14 @@ def train_and_evaluate(data):
 
         return {
             "MAE": mean_absolute_error(
-                actual, prediction
+                actual,
+                prediction
             ),
 
             "RMSE": np.sqrt(
                 mean_squared_error(
-                    actual, prediction
+                    actual,
+                    prediction
                 )
             ),
 
@@ -293,11 +326,13 @@ def train_and_evaluate(data):
         }
 
     model_scores = get_metrics(
-        y_test, predicted
+        y_test,
+        predicted
     )
 
     baseline_scores = get_metrics(
-        y_test, baseline
+        y_test,
+        baseline
     )
 
     results = pd.DataFrame([
@@ -311,8 +346,9 @@ def train_and_evaluate(data):
         }
     ])
 
+    # Save regression metrics
     results.to_csv(
-        OUTPUTS / "regression_metrics.csv",
+        TABLES / "regression_metrics.csv",
         index=False
     )
 
@@ -335,7 +371,7 @@ def train_and_evaluate(data):
     )
 
     predictions.to_csv(
-        OUTPUTS / "regression_test_predictions.csv",
+        TABLES / "regression_test_predictions.csv",
         index=False
     )
 
@@ -352,15 +388,17 @@ def train_and_evaluate(data):
     return model, test, predicted
 
 
-# --------------------------------------------------
+# ----------------------------------------------------------
 # 5. CREATE GRAPHS
-# --------------------------------------------------
+# ----------------------------------------------------------
 
 def create_graphs(data, model, test, predicted):
 
     print("\nSTEP 4: Creating graphs")
 
-    # Graph 1: Temperature vs Heat-stroke mortality
+    # ------------------------------------------------------
+    # GRAPH 1: Temperature vs Heat-Stroke Mortality
+    # ------------------------------------------------------
 
     plt.figure(figsize=(9, 6))
 
@@ -378,7 +416,7 @@ def create_graphs(data, model, test, predicted):
     )
 
     y_values = model.predict(
-        x_values.reshape(-1, 1)
+        pd.DataFrame({PREDICTOR: x_values})
     )
 
     plt.plot(
@@ -387,21 +425,33 @@ def create_graphs(data, model, test, predicted):
         label="Fitted regression line"
     )
 
-    plt.xlabel("Summer mean maximum temperature (°C)")
-    plt.ylabel("Heat-stroke deaths per lakh population")
-    plt.title("Temperature vs Heat-stroke Mortality (2001-2014)")
+    plt.xlabel(
+        "Summer mean maximum temperature (°C)"
+    )
+
+    plt.ylabel(
+        "Heat-stroke deaths per lakh population"
+    )
+
+    plt.title(
+        "Temperature vs Heat-stroke Mortality (2001-2014)"
+    )
+
     plt.legend()
     plt.grid(alpha=0.25)
     plt.tight_layout()
 
     plt.savefig(
         FIGURES / "07_temperature_vs_heatstroke.png",
-        dpi=300
+        dpi=300,
+        bbox_inches="tight"
     )
 
     plt.close()
 
-    # Graph 2: Actual vs Predicted
+    # ------------------------------------------------------
+    # GRAPH 2: Actual vs Predicted
+    # ------------------------------------------------------
 
     actual = test[TARGET].to_numpy()
 
@@ -429,20 +479,32 @@ def create_graphs(data, model, test, predicted):
         linestyle="--"
     )
 
-    plt.xlabel("Actual heat-stroke deaths per lakh")
-    plt.ylabel("Predicted heat-stroke deaths per lakh")
-    plt.title("Actual vs Predicted Mortality (Test: 2012-2014)")
+    plt.xlabel(
+        "Actual heat-stroke deaths per lakh"
+    )
+
+    plt.ylabel(
+        "Predicted heat-stroke deaths per lakh"
+    )
+
+    plt.title(
+        "Actual vs Predicted Mortality (Test: 2012-2014)"
+    )
+
     plt.grid(alpha=0.25)
     plt.tight_layout()
 
     plt.savefig(
         FIGURES / "08_actual_vs_predicted.png",
-        dpi=300
+        dpi=300,
+        bbox_inches="tight"
     )
 
     plt.close()
 
-    # Graph 3: Residual plot
+    # ------------------------------------------------------
+    # GRAPH 3: Residual Plot
+    # ------------------------------------------------------
 
     residuals = actual - predicted
 
@@ -459,15 +521,25 @@ def create_graphs(data, model, test, predicted):
         linestyle="--"
     )
 
-    plt.xlabel("Predicted heat-stroke deaths per lakh")
-    plt.ylabel("Residual (actual - predicted)")
-    plt.title("Regression Residual Plot (Test: 2012-2014)")
+    plt.xlabel(
+        "Predicted heat-stroke deaths per lakh"
+    )
+
+    plt.ylabel(
+        "Residual (actual - predicted)"
+    )
+
+    plt.title(
+        "Regression Residual Plot (Test: 2012-2014)"
+    )
+
     plt.grid(alpha=0.25)
     plt.tight_layout()
 
     plt.savefig(
         FIGURES / "09_regression_residuals.png",
-        dpi=300
+        dpi=300,
+        bbox_inches="tight"
     )
 
     plt.close()
@@ -475,9 +547,9 @@ def create_graphs(data, model, test, predicted):
     print("All three graphs saved successfully.")
 
 
-# --------------------------------------------------
+# ----------------------------------------------------------
 # 6. MAIN FUNCTION
-# --------------------------------------------------
+# ----------------------------------------------------------
 
 def main():
 
@@ -485,10 +557,13 @@ def main():
     print("TEMPERATURE AND HEAT-STROKE REGRESSION")
     print("=" * 60)
 
+    # Step 1: Load and prepare data
     data = load_and_prepare_data()
 
+    # Step 2: Train and evaluate regression
     model, test, predicted = train_and_evaluate(data)
 
+    # Step 3: Create graphs
     create_graphs(
         data,
         model,
@@ -496,16 +571,38 @@ def main():
         predicted
     )
 
+    # Step 4: Display research limitations
     print("\nRESEARCH LIMITATIONS:")
-    print("1. Association does not establish causation.")
-    print("2. Fixed 2011 Census population denominators are approximate.")
-    print("3. Other factors may affect heat-stroke mortality.")
-    print("4. Repeated State-year observations are not independent.")
-    print("5. Compare results with the training-mean baseline.")
 
-    print("\nREGRESSION TASK COMPLETED.")
-    print("Check the outputs folder.")
+    print(
+        "1. Association does not establish causation."
+    )
 
+    print(
+        "2. Fixed 2011 Census population denominators are approximate."
+    )
+
+    print(
+        "3. Other factors may affect heat-stroke mortality."
+    )
+
+    print(
+        "4. Repeated State-year observations are not independent."
+    )
+
+    print(
+        "5. Compare results with the training-mean baseline."
+    )
+
+    print("\nREGRESSION TASK COMPLETED!")
+
+    print("\nCSV files saved inside outputs/tables/")
+    print("Graphs saved inside outputs/figures/")
+
+
+# ----------------------------------------------------------
+# 7. EXECUTION
+# ----------------------------------------------------------
 
 if __name__ == "__main__":
 
