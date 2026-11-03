@@ -13,9 +13,6 @@ __pycache__/
 # Environment files
 .env
 
-# Raw datasets
+# Ignore only raw datasets
 data/raw/*
 data/boundaries/*
-
-# Generated outputs
-outputs/
